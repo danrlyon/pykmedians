@@ -1,7 +1,6 @@
 ''' Calculate K Medians from CSV values
 
     TODO:
-    - Plot data
     - Ingest csv files
 '''
 
@@ -10,6 +9,7 @@
 import math
 import random
 import numpy as np
+from sklearn.datasets import fetch_openml
 from sklearn import datasets
 import logging
 import configargparse
@@ -76,6 +76,22 @@ def parse_args():
         default=0.00001
     )
     argp.add(
+        '-p',
+        '--plot',
+        required=False,
+        type=bool,
+        help='Pass any value after the -p option to plot the data.',
+        default=False
+    )
+    argp.add(
+        '-s',
+        '--dataset',
+        required=False,
+        type=str,
+        help='The name of the dataset to fetch from openml.',
+        default='iris'
+    )
+    argp.add(
         '--loglevel',
         required=False,
         help='Logging Level',
@@ -101,17 +117,20 @@ def initial_centroids(k, dataset):
         selected by splitting the dataset into k groups and randomly
         picking a data point in each group.
     '''
-    dataset_size = len(dataset) 
+    dataset_size = len(dataset)
+    dimensions = len(dataset[0])
     log.debug(f"Initializing k={k} Centroids from "
-              f"dataset size={dataset_size}.")
+              f"dataset size={dataset_size}, dimensions={dimensions}.")
     centroids = list()
     group_size = int(len(dataset)/k + 1)
     log.debug(f"The size of each group is {group_size}")
+    shuffled_data = dataset.copy()
+    random.shuffle(shuffled_data)
     for i in range(0, dataset_size, group_size):
         log.debug(f"i={i}")
         index = random.randint(i, min(i + group_size, dataset_size - 1)) 
         log.debug(f"Index of centroid: {index}")
-        centroids.append(dataset[index])
+        centroids.append(shuffled_data[index])
     log.debug(f"Centroids: {centroids}")
     return centroids
 
@@ -138,7 +157,9 @@ def manhattan_distance(centroid, data):
     ''' Returns the Manhattan Distance between the centroid
         and the data.
     '''
-    distance = sum([abs(x1 - x2) for x1, x2 in zip(centroid, data)])   
+    distance = 0
+    for i in range(len(data)):
+        distance += abs(data[i] - centroid[i])
     log.debug(f"Manhattan Distance from {centroid} to {data} = {distance}")
     return distance
 
@@ -146,24 +167,27 @@ def manhattan_distance(centroid, data):
 def calculate_kmedian(dataset):
     ''' Take a list on N dimensions and find the median for each dimension.
     '''
+    n = len(dataset[0])
     l = len(dataset)
-    temp_sorted_1 = list()
-    temp_sorted_2 = list()
+    temp_sorted = list()
+    kmedian = list()
+    for i in range(n):
+        temp_sorted.append(list())
     for row in dataset:
-        temp_sorted_1.append(row[0])
-        temp_sorted_2.append(row[1])
-    temp_sorted_1.sort()
-    temp_sorted_2.sort()
-    # If even, the median is the average of the middle 2 elements
+        for i in range(n):
+            temp_sorted[i].append(row[i])
+    for i in range(n):
+        temp_sorted[i].sort()
     if l % 2 == 0:
-        kmedian1 = (temp_sorted_1[int(l / 2)] + temp_sorted_1[int(l / 2) - 1]) / 2
-        kmedian2 = (temp_sorted_2[int(l / 2)] + temp_sorted_2[int(l / 2) - 1]) / 2
+        for i in range(n):
+            result = (temp_sorted[i][int(l / 2)] + temp_sorted[i][int(l / 2) - 1]) / 2
+            kmedian.append(result)
     else:
-        kmedian1 = temp_sorted_1[int(l / 2) + 1]
-        kmedian2 = temp_sorted_2[int(l / 2) + 1]
-    log.info(f"K-Median 1: {kmedian1}")
-    log.info(f"K-Median 2: {kmedian2}")
-    return [kmedian1, kmedian2]
+        for i in range(n):
+            result = temp_sorted[i][int(l / 2) + 1]
+            kmedian.append(result)
+    log.info(f"Calculated k-median = {kmedian}")
+    return kmedian
 
 
 def plot_results(dataset, labels, centroids):
@@ -171,9 +195,11 @@ def plot_results(dataset, labels, centroids):
         It will also plot the calculated k medians as red for visibility.
     '''
     plt.scatter(dataset[:, 0], dataset[:, 1], s=100, c=labels)
-    x, y = zip(*centroids)
-    plt.scatter(x, y, s=300, c="#FF0000")
-    # plt.scatter(centroids[1][0], centroids[1][1], s=30, c=[200])
+    if centroids:
+        # zipped = zip(*centroids)
+        zipped = np.array(centroids)
+        plt.scatter(zipped[:, 0], zipped[:, 1], s=300, c="#FF0000")
+        #plt.scatter(centroids[1][0], centroids[1][1], s=30, c=[200])
     plt.xlabel("Sepal Length (cm)")
     plt.ylabel("Sepal Width (cm)")
     plt.title("Iris Dataset")
@@ -185,16 +211,35 @@ def main():
     log.debug("Start main().")
     np.set_printoptions(precision=10)
     # TODO: use input file
-    ## slim it down to 2d,
-    X, y = datasets.load_iris(return_X_y=True)
-    X = X[:, 0:2]
+    X, y = fetch_openml(args.dataset, as_frame=False, return_X_y=True)
+    name_list = y.copy()
+    # random.shuffle()
+    log.info(X)
+    name_set = list()  # Index mapped to name of classifier
+    for a in y:
+        if name_set.count(a) == 0:
+            name_set.append(a)
+    # log.info(f"Name Set: {name_set}")
+    for i in range(len(y)):
+        y[i] = name_set.index(y[i])
+    log.info(y)
+    # for name in names:
+    # log.info(data)
+    # X, y = data['data']
+    X = X[:, 0:args.dimensions]
+    log.info(f"{X}, {y}")
+    # log.info(f"Using {data.details}")    #the {data.Name} dataset, version {data.version}.")
+    # X, y = data.load_digits(return_X_y=True)
+    # X = X[:, 0:args.dimensions]
     log.info(f"Initial Data")
-    plt.scatter(X[:, 0], X[:, 1], s=100, c="#000000")
-    # TODO: make this input
-    plt.xlabel("Sepal Length (cm)")
-    plt.ylabel("Sepal Width (cm)")
-    plt.title("Iris Dataset")
-    plt.show()
+    # If plotting, then show the initial data set
+    if args.plot:
+        plt.scatter(X[:, 0], X[:, 1], s=100, c="#000000")
+        # TODO: make this input
+        plt.xlabel("Sepal Length (cm)")
+        plt.ylabel("Sepal Width (cm)")
+        plt.title("Iris Dataset")
+        plt.show()
 
     # log.debug(f"X = {X}")
     # log.debug(f"y={y}")
@@ -215,7 +260,8 @@ def main():
     # Build a list to track the total movement of the centroids
     centroid_movement = [math.inf for i in range(len(centroids))]
     labels = assign_kmedian_labels(centroids, X)
-    plot_results(X, labels, centroids)
+    if args.plot:
+        plot_results(X, labels, centroids)
     while sum(centroid_movement) > args.epsilon and iteration_count < 100:
         iteration_count += 1
         log.info(f"Iteration Number {iteration_count}")
@@ -233,11 +279,21 @@ def main():
             labels = assign_kmedian_labels(centroids, X)
             temp_centroid.clear()
         # Plot Results for each iteration
-        plot_results(X, labels, centroids)
+        if args.plot:
+            plot_results(X, labels, centroids)
     log.info(f"Completed Calculations: {centroids}")
-    plot_results(X, labels, centroids)
-    log.debug(f"Compared to Original")
-    plot_results(X, y, centroids)
+    if args.plot: plot_results(X, labels, centroids)
+    log.info(f"Compared to Original")
+    if args.plot: plot_results(X, y, list())
+    correct_label = 0
+    # for i, x in enumerate(X):
+
+    
+    for a, b in zip(y, labels):
+        # log.info(f"{a}, {b}")
+        if a == b:
+            correct_label += 1
+    log.info(f"Percent Correct: {100*correct_label/len(y)}")
    
 
 if __name__ == "__main__":
